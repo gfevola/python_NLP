@@ -1,0 +1,85 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Nov 27 16:41:55 2021
+#https://stackoverflow.com/questions/63312140/how-to-save-my-own-trained-word-embedding-model-using-keras-like-word2vec-and
+@author: 16317
+"""
+
+import numpy as np
+import pandas as pd
+from keras.preprocessing.text import one_hot, Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+from keras.models import Sequential
+from keras import layers
+import random
+import nltk as nltk
+
+docs = neitzche_sent
+labels = np.repeat(0, len(neitzche_sent))
+
+
+def NgramSample(textlist, N, toss = .1, split=.7):
+    tlen = len(textlist)
+    grams = [textlist[a:a+N] for a in range(tlen - N)]
+    random.shuffle(grams)
+    grams = grams[1:round(tlen * (1-toss))]
+    return([grams[1:round(tlen * split)], grams[round(tlen * split):tlen]])
+
+
+
+# train the tokenizer
+vocab_size = 50000
+tokenizer = Tokenizer(num_words=vocab_size)
+tokenizer.fit_on_texts(docs)
+
+# encode the sentences
+encoded_docs = tokenizer.texts_to_sequences(docs)
+full_enc_doc = ",".join("'{0}'".format(n) for n in encoded_docs)
+full_enc_doc = full_enc_doc[2:-2].replace("]'",'').replace("'[",'').replace(' ','').split(",")
+full_enc_doc = [int(x) for x in full_enc_doc if len(x)>0]
+
+
+
+#v1: pad documents to a max length of N words
+max_length = 10
+padded_docs = pad_sequences(encoded_docs, maxlen=max_length, padding='post')
+
+#v2: create sequences from full array
+seq_len = 10
+[xx,yy] = NgramSample(full_enc_doc,seq_len,toss=.1, split=.7)
+
+# define the model
+model = Sequential()
+model.add(layers.Embedding(input_dim = vocab_size, output_dim = 16, input_length=max_length, name='embeddings'))
+model.add(layers.GRU(256, return_sequences=True))
+model.add(layers.SimpleRNN(128))
+#model.add(Flatten())
+model.add(layers.Dense(1, activation='sigmoid'))
+
+# compile the model
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# fit the model
+labels = np.repeat(0, len(xx))
+model.fit(np.asmatrix(xx), labels, epochs=50, verbose=0)
+
+# save embeddings
+
+term = 'teeth'    
+
+embeddings = model.get_layer('embeddings').get_weights()[0]
+w2v_my = {}
+w2v_pos = {}
+wordcor = []
+
+for word, index in tokenizer.word_index.items():
+    w2v_my[word] = embeddings[index]
+    w2v_pos[word] = nltk.pos_tag([word])
+
+embdist = [np.linalg.norm(w2v_my[term] - i) for i in embeddings]
+
+for word, index in tokenizer.word_index.items():
+    wordcor.append([word, w2v_pos[word][0][1], np.linalg.norm(w2v_my[term] - embeddings[index])])
+    
+wordcor = pd.DataFrame(wordcor)
+
